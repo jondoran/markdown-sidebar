@@ -1,0 +1,421 @@
+/* Firefox Sidebar Extension - Toolbar Style */
+
+:root {
+    /* Firefox-inspired color palette */
+    --firefox-blue: #0060df;
+    --firefox-light-blue: #0a84ff;
+    --firefox-dark-grey: #38383d;
+    --firefox-grey: #4a4a4f;
+    --firefox-light-grey: #b1b1b3;
+    --firefox-lighter-grey: #f9f9fa;
+    --firefox-border: #d7d7db;
+    --firefox-highlight: #ededf0;
+    --firefox-focus-outline: rgba(10, 132, 255, 0.3);
+}
+
+/* Base styles */
+html, body {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: var(--firefox-dark-grey);
+    background-color: var(--firefox-lighter-grey);
+}
+
+*, *:before, *:after {
+    box-sizing: inherit;
+}
+
+/* Top-level title */
+#sidebar-title {
+    font-size: 18x;
+    font-weight: 600;
+    margin: 0;
+    padding: 10px;
+    background-color: var(--firefox-lighter-grey);
+    border-bottom: 1px solid var(--firefox-border);
+    color: var(--firefox-dark-grey);
+    word-wrap: break-word;
+    display: none; /* Initially hidden, shown by JS if content exists */
+}
+
+/* Main container */
+.container {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    width: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* Controls bar */
+.controls {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    background-color: var(--firefox-lighter-grey);
+    border-bottom: 1px solid var(--firefox-border);
+    align-items: center;
+    flex-shrink: 0;
+}
+
+/* Dropdown styling */
+#group-selector {
+    flex-grow: 1;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--firefox-border);
+    border-radius: 2px;
+    background-color: white;
+    color: var(--firefox-dark-grey);
+    font-size: 13px;
+    appearance: none;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path fill="%234a4a4f" d="M6 9L1 4h10z"/></svg>');
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    cursor: pointer;
+    max-width: 200px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+#group-selector:hover {
+    border-color: var(--firefox-light-grey);
+}
+
+#group-selector:focus {
+    border-color: var(--firefox-light-blue);
+    outline: 2px solid var(--firefox-focus-outline);
+    outline-offset: 1px;
+}
+
+/* Button styling */
+button {
+    min-width: 32px;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--firefox-border);
+    border-radius: 2px;
+    background-color: white;
+    color: var(--firefox-dark-grey);
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+button:hover {
+    background-color: var(--firefox-highlight);
+}
+
+button:active {
+    background-color: var(--firefox-border);
+}
+
+button:focus {
+    outline: 2px solid var(--firefox-focus-outline);
+    outline-offset: 1px;
+}
+
+/* Links display area */
+#links-display {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 15px;
+    background-color: white;
+    width: 100%;
+}
+
+/* List styling */
+#links-display ul {
+    list-style-type: disc; /* Show bullets */
+    padding-left: 20px; /* Add left padding for bullets */
+    margin: 0 0 10px 0;
+    width: 100%;
+}
+
+#links-display ol {
+    list-style-type: decimal; /* Show numbers */
+    padding-left: 20px; /* Add left padding for numbers */
+    margin: 0 0 10px 0;
+    width: 100%;
+}
+
+#links-display li {
+    margin-bottom: 6px;
+    word-wrap: break-word;
+    line-height: 1.4;
+    position: relative;
+    display: list-item; /* Ensure list items display properly */
+}
+
+/* Paragraph styling */
+#links-display li p {
+    margin: 0;
+    padding: 0;
+    display: inline;
+}
+
+/* Nested lists */
+#links-display ul ul,
+#links-display ol ol,
+#links-display ul ol,
+#links-display ol ul {
+    margin-top: 4px;
+    margin-left: 24px; /* Indentation for nested lists */
+}
+
+/* Support for deeper nesting levels */
+#links-display ul ul ul, 
+#links-display ol ol ol,
+#links-display ul ol ul,
+#links-display ol ul ol,
+#links-display ul ul ol,
+#links-display ol ol ul {
+    margin-left: 24px; /* Consistent indentation at deeper levels */
+}
+
+/* Remove header-based indentation rules to avoid conflicts with marked's rendering */
+
+/* Checkbox items */
+#links-display li.checkbox-item {
+    padding-left: 0;
+    display: flex;
+    align-items: flex-start;
+}
+
+#links-display li.checkbox-item input[type="checkbox"] {
+    margin-right: 6px;
+    margin-top: 3px;
+    cursor: pointer;
+}
+
+#links-display li.checkbox-item span {
+    flex: 1;
+}
+
+/* Strikethrough for checked items */
+#links-display li.task-list-item.checked {
+    text-decoration: line-through;
+    color: var(--firefox-light-grey);
+}
+
+/* Markdown items */
+#links-display .markdown-item {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    padding: 2px 4px;
+    border-radius: 2px;
+}
+
+#links-display .markdown-item:hover {
+    background-color: var(--firefox-highlight);
+}
+
+/* Bullet, number, and content */
+#links-display .bullet,
+#links-display .number {
+    flex-shrink: 0;
+    margin-right: 6px;
+    color: var(--firefox-grey);
+}
+
+#links-display .content {
+    flex: 1;
+}
+
+/* Headers */
+#links-display h3, #links-display .markdown-h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 16px 0 8px 0;
+    padding: 4px 0;
+    color: var(--firefox-blue);
+    border-bottom: 1px solid var(--firefox-border);
+}
+
+#links-display h4, #links-display .markdown-h4 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 14px 0 7px 0;
+    padding: 3px 0;
+    color: var(--firefox-dark-grey);
+}
+
+#links-display h5, #links-display .markdown-h5 {
+    font-size: 12px;
+    font-weight: 600;
+    margin: 12px 0 6px 0;
+    padding: 2px 0;
+    color: var(--firefox-dark-grey);
+}
+
+#links-display h6, #links-display .markdown-h6 {
+    font-size: 12px;
+    font-weight: 600;
+    font-style: italic;
+    margin: 10px 0 5px 0;
+    padding: 2px 0;
+    color: var(--firefox-grey);
+}
+
+/* Remove header-based indentation */
+
+/* Text formatting */
+#links-display strong {
+    font-weight: 600;
+}
+
+#links-display em {
+    font-style: italic;
+}
+
+#links-display code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    background-color: var(--firefox-highlight);
+    padding: 0.1em 0.3em;
+    border-radius: 2px;
+    font-size: 0.9em;
+}
+
+/* Code blocks */
+#links-display pre {
+    background-color: var(--firefox-highlight);
+    border-radius: 4px;
+    padding: 12px;
+    margin: 12px 0;
+    overflow-x: auto;
+    border: 1px solid var(--firefox-border);
+}
+
+#links-display pre code {
+    background-color: transparent;
+    padding: 0;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9em;
+    white-space: pre;
+    display: block;
+    line-height: 1.5;
+}
+
+/* Blockquotes */
+#links-display blockquote, #links-display .markdown-blockquote {
+    border-left: 3px solid var(--firefox-light-grey);
+    padding: 4px 0 4px 10px;
+    margin: 8px 0 8px 4px;
+    color: var(--firefox-grey);
+    background-color: rgba(0, 0, 0, 0.02);
+    border-radius: 0 2px 2px 0;
+}
+
+/* Horizontal rules */
+#links-display hr, #links-display .markdown-hr {
+    border: none;
+    height: 1px;
+    background-color: var(--firefox-border);
+    margin: 12px 0;
+}
+
+/* Paragraphs */
+#links-display p, #links-display .markdown-paragraph {
+    margin: 8px 0;
+    line-height: 1.5;
+}
+
+/* Highlighted text */
+#links-display mark {
+    background-color: #ffeb3b;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+/* Ordered lists */
+#links-display ol, #links-display .markdown-ordered-list {
+    padding-left: 20px; /* Add left padding for numbers */
+    margin: 8px 0;
+    list-style-type: decimal; /* Show numbers */
+}
+
+#links-display ol li {
+    margin-bottom: 6px;
+    display: list-item; /* Ensure list items display properly */
+}
+
+/* Unordered lists */
+#links-display ul, #links-display .markdown-unordered-list {
+    padding-left: 20px; /* Add left padding for bullets */
+    margin: 8px 0;
+    list-style-type: disc; /* Show bullets */
+}
+
+/* Task lists (checkboxes) */
+#links-display ul li.task-list-item {
+    list-style-type: none; /* Remove bullets for task list items */
+    padding-left: 0;
+    margin-left: -20px; /* Adjust margin to align with other list items */
+    display: flex;
+    flex-wrap: wrap;
+}
+
+#links-display ul li.task-list-item input[type="checkbox"] {
+    margin-right: 6px;
+    margin-top: 3px;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+#links-display ul li.task-list-item > :not(input[type="checkbox"]) {
+    flex: 1;
+    min-width: calc(100% - 25px); /* Ensure text wraps properly with indentation */
+    padding-left: 20px; /* Indent wrapped lines */
+    margin-left: -20px; /* Offset the padding to align first line with checkbox */
+}
+
+/* Links */
+#links-display a {
+    text-decoration: none;
+    color: var(--firefox-light-blue);
+}
+
+#links-display a:hover {
+    text-decoration: underline;
+}
+
+/* Edit mode */
+#edit-mode {
+    flex-grow: 1;
+    display: none;
+    flex-direction: column;
+    width: 100%;
+    min-height: 0;
+    padding: 8px;
+    background-color: white;
+}
+
+#markdown-input {
+    width: 100%;
+    flex-grow: 1;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 13px;
+    border: 1px solid var(--firefox-border);
+    border-radius: 2px;
+    resize: none;
+    padding: 8px;
+    line-height: 1.5;
+}
+
+#markdown-input:focus {
+    border-color: var(--firefox-light-blue);
+    outline: 2px solid var(--firefox-focus-outline);
+    outline-offset: 1px;
+}

@@ -1,0 +1,27 @@
+{
+    "manifest_version": 3,
+    "name": "Markdown Links Sidebar",
+    "version": "0.1.0",
+    "description": "Displays organized links and notes from Markdown text in a sidebar.",
+  
+    "icons": {
+      "48": "icons/icon48.png"
+    },
+  
+    "permissions": [
+      "storage",
+      "tabs"
+    ],
+  
+    "sidebar_action": {
+      "default_panel": "sidebar/sidebar.html",
+      "default_title": "Markdown Links Sidebar",
+      "default_icon": "icons/icon48.png"
+    },
+  
+    "browser_specific_settings": {
+      "gecko": {
+        "id": "mls@doran.au"
+      }
+    }
+}

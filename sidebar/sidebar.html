@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="sidebar.css">
+</head>
+<body>
+    <!-- 1. Add container for the main title -->
+    <h1 id="sidebar-title"></h1>
+
+    <div class="container">
+        <div class="controls">
+             <select id="group-selector" title="Select Link Group"></select>
+             <button id="add-tab-button" title="Add Current Tab">+</button>
+             <button id="edit-button" title="Edit Markdown">Edit</button>
+             <button id="save-button" title="Save Changes" style="display: none;">Save</button>
+        </div>
+
+        <div id="links-display">
+            <!-- Links/notes for the selected group will be displayed here -->
+        </div>
+
+        <div id="edit-mode" style="display: none;">
+             <textarea id="markdown-input" rows="15" placeholder="Enter Markdown here...
+# Main Title (Optional)
+## Group 1
+- [Example **Link**](https://example.com)
+- Just a *note*
+
+## Group 2
+* Another note"></textarea>
+        </div>
+
+    </div>
+    <script src="marked.min.js"></script>
+    <script src="sidebar.js"></script>
+</body>
+</html>
