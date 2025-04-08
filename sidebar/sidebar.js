@@ -1,10 +1,11 @@
-// markdown-links-sidebar/sidebar/sidebar.js
+// markdown-links-sidebar/sidebar.js
 
 // --- State ---
 let currentMarkdown = '';
 let isEditMode = false;
 let topLevelTitle = ''; // Store the H1 title
-let linkGroups = {}; // Object to hold parsed data: { "GroupName": [{text: "...", url: "...", rawText: "..."}, ...] }
+// NEW: linkGroups now stores tokens: { "GroupName": [token1, token2, ...] }
+let linkGroups = {};
 
 // DOM References - will be initialized when the DOM is loaded
 let sidebarTitleElement;
@@ -20,9 +21,13 @@ let addTabButton;
 const defaultMarkdown = `# My Awesome Links
 
 ## Browser Tools
-- [**Marked** Test](https://marked.js.org/)
+- [**Marked** Test](https://marked.js.org/) and some *other* text.
 - [*Firefox* Add-ons](https://addons.mozilla.org)
 - \`about:debugging\`
+  - Nested item 1
+  - Nested item 2
+    1. Ordered nested
+    2. Another ordered
 
 ### Development
 - [ ] Install web-ext tool
@@ -42,6 +47,8 @@ This is a paragraph with some ==highlighted text== that demonstrates the highlig
 ### Tutorials
 1. First, visit the [Firefox Extension Workshop](https://extensionworkshop.com/)
 2. Then, follow the getting started guide
+   * Sub-bullet point
+   * Another sub-bullet
 3. Finally, build your extension
 
 ## Notes
@@ -54,31 +61,19 @@ This is a paragraph with some ==highlighted text== that demonstrates the highlig
 - [x] Markdown formatting
 `;
 
-// --- Configure Marked (Security) ---
-// Use the 'marked' global object loaded from the script
+// --- Configure Marked ---
 console.log("Checking if Marked library is loaded:", typeof marked);
 if (typeof marked !== 'undefined') {
     console.log("Marked version:", marked.version);
-    
-    // Test if Marked is working correctly
-    const testMarkdown = "# Test\n## Subheading\n- List item 1\n- List item 2\n### H3 Header\n- [ ] Checklist item";
-    console.log("Test Markdown rendering:", marked.parse(testMarkdown));
-    
     marked.setOptions({
-        gfm: true, // Enable GitHub Flavored Markdown (includes strikethrough, tables slightly better)
-        breaks: true, // Convert single line breaks to <br> (optional, can make lists look odd)
-        sanitize: false, // DEPRECATED in newer Marked. Use sanitizer or DOMPurify if needed.
-        // IMPORTANT: For basic use where YOU control the markdown, this is okay.
-        // If users could potentially input arbitrary markdown from elsewhere,
-        // you MUST use a sanitizer like DOMPurify *after* Marked runs.
-        // Example (requires including DOMPurify library):
-        // marked.setOptions({ ..., sanitizer: DOMPurify.sanitize });
-        mangle: false, // Keeps email links as is
-        headerIds: false // Don't add IDs to headers we generate
+        gfm: true,
+        breaks: true, // Consider if you still want this with better list handling
+        sanitize: false, // Keep false, but remember the sanitizer recommendation for production
+        mangle: false,
+        headerIds: false
     });
 } else {
     console.error("Marked library not loaded!");
-    // Provide a fallback or disable Markdown features
     alert("Error: Markdown library failed to load. Formatting will be basic.");
 }
 
@@ -86,309 +81,51 @@ if (typeof marked !== 'undefined') {
 // --- Core Functions ---
 
 /**
- * Parses the raw Markdown string.
- * Captures the first H1 (#) as the topLevelTitle.
- * Uses H2 (##) headers to define group names.
- * Supports various markdown elements including:
- * - Headers (H1-H6)
- * - Unordered lists (* or -)
- * - Ordered lists (1. 2. etc)
- * - Checklist items (- [ ] or - [x])
- * - Horizontal rules (---, ***, ___)
- * - Blockquotes (>)
- * - Paragraphs
+ * Uses marked.lexer to get tokens and groups them by H2 headers.
+ * Captures the first H1 token as the topLevelTitle.
  */
-function parseMarkdown(markdown) {
-    const lines = markdown.trim().split('\n');
+function lexAndGroupMarkdown(markdown) {
+    const tokens = marked.lexer(markdown.trim());
     const groups = {};
     let currentGroup = 'Uncategorized'; // Default group
+    let currentGroupTokens = [];
     let foundH1 = false;
-    let parsedTitle = ''; // Temporary title found during parse
-    let currentHeader = null; // Track current header (H3-H6)
-    let currentHeaderLevel = 0; // Track the level of the current header
-    
-    // For paragraph handling
-    let inParagraph = false;
-    let currentParagraph = '';
-    
-    // For blockquote handling
-    let inBlockquote = false;
-    let currentBlockquote = '';
-    
-    // Helper function to add the current paragraph to the group
-    const addParagraphToGroup = () => {
-        if (currentParagraph.trim()) {
-            if (!groups[currentGroup]) {
-                groups[currentGroup] = [];
-            }
-            
-            groups[currentGroup].push({
-                rawText: currentParagraph,
-                text: currentParagraph,
-                url: null,
-                isParagraph: true,
-                underHeader: currentHeader,
-                headerLevel: currentHeaderLevel
-            });
-            
-            currentParagraph = '';
-            inParagraph = false;
-        }
-    };
-    
-    // Helper function to add the current blockquote to the group
-    const addBlockquoteToGroup = () => {
-        if (currentBlockquote.trim()) {
-            if (!groups[currentGroup]) {
-                groups[currentGroup] = [];
-            }
-            
-            groups[currentGroup].push({
-                rawText: currentBlockquote,
-                text: currentBlockquote.replace(/^>\s?/gm, ''), // Remove > prefix
-                url: null,
-                isBlockquote: true,
-                underHeader: currentHeader,
-                headerLevel: currentHeaderLevel
-            });
-            
-            currentBlockquote = '';
-            inBlockquote = false;
-        }
-    };
+    let parsedTitle = '';
 
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const trimmedLine = line.trim();
-        
-        // Skip empty lines, but they end paragraphs and blockquotes
-        if (!trimmedLine) {
-            if (inParagraph) {
-                addParagraphToGroup();
-            }
-            
-            if (inBlockquote) {
-                addBlockquoteToGroup();
-            }
-            
-            continue;
-        }
+    // Find H1 first
+    const firstH1Index = tokens.findIndex(token => token.type === 'heading' && token.depth === 1);
+    if (firstH1Index !== -1) {
+        parsedTitle = tokens[firstH1Index].text;
+        foundH1 = true;
+        // Remove the H1 token from the main list to avoid it appearing in groups
+        tokens.splice(firstH1Index, 1);
+    }
 
-        // Match H1 (Top Level Title) - ONLY the first one counts
-        const h1Match = trimmedLine.match(/^#\s+(?!#)(.*)/); // Starts with #, not ##
-        if (h1Match && !foundH1) {
-            if (inParagraph) {
-                addParagraphToGroup();
+    tokens.forEach(token => {
+        if (token.type === 'heading' && token.depth === 2) {
+            // Save the previous group's tokens
+            if (currentGroup !== 'Uncategorized' || currentGroupTokens.length > 0) {
+                groups[currentGroup] = currentGroupTokens;
             }
-            
-            if (inBlockquote) {
-                addBlockquoteToGroup();
-            }
-            
-            parsedTitle = h1Match[1].trim();
-            foundH1 = true;
-            continue;
-        }
-
-        // Match H2 (Group Headers)
-        const h2Match = trimmedLine.match(/^##\s+(?!#)(.*)/);
-        if (h2Match) {
-            if (inParagraph) {
-                addParagraphToGroup();
-            }
-            
-            if (inBlockquote) {
-                addBlockquoteToGroup();
-            }
-            
-            currentGroup = h2Match[1].trim();
-            currentHeader = null; // Reset header when we encounter a new H2
-            currentHeaderLevel = 0;
-            
-            if (!groups[currentGroup]) {
-                groups[currentGroup] = [];
-            }
-            continue;
-        }
-
-        // Match H3-H6 headers
-        const headerMatch = trimmedLine.match(/^(#{3,6})\s+(.*)/);
-        if (headerMatch) {
-            if (inParagraph) {
-                addParagraphToGroup();
-            }
-            
-            if (inBlockquote) {
-                addBlockquoteToGroup();
-            }
-            
-            const level = headerMatch[1].length; // Number of # characters (3-6)
-            const headerText = headerMatch[2].trim();
-            
-            // Add the header as a special item in the current group
-            if (!groups[currentGroup]) {
-                groups[currentGroup] = [];
-            }
-            
-            currentHeader = headerText;
-            currentHeaderLevel = level;
-            
-            groups[currentGroup].push({
-                rawText: `${'#'.repeat(level)} ${headerText}`, // Keep original Markdown
-                text: headerText,
-                url: null,
-                isHeader: true,
-                headerLevel: level
-            });
-            continue;
-        }
-        
-        // Match horizontal rules
-        if (trimmedLine.match(/^([-*_])\1{2,}$/)) {
-            if (inParagraph) {
-                addParagraphToGroup();
-            }
-            
-            if (inBlockquote) {
-                addBlockquoteToGroup();
-            }
-            
-            if (!groups[currentGroup]) {
-                groups[currentGroup] = [];
-            }
-            
-            groups[currentGroup].push({
-                rawText: trimmedLine,
-                text: '',
-                url: null,
-                isHorizontalRule: true,
-                underHeader: currentHeader,
-                headerLevel: currentHeaderLevel
-            });
-            continue;
-        }
-        
-        // Match blockquotes
-        const blockquoteMatch = trimmedLine.match(/^>\s?(.*)/);
-        if (blockquoteMatch) {
-            if (inParagraph) {
-                addParagraphToGroup();
-            }
-            
-            inBlockquote = true;
-            currentBlockquote += (currentBlockquote ? '\n' : '') + line;
-            continue;
-        }
-
-        // Match unordered list items (e.g., - Item, * Item)
-        const listItemMatch = trimmedLine.match(/^(\s*)([-*])\s+(.*)/);
-        if (listItemMatch) {
-            if (inParagraph) {
-                addParagraphToGroup();
-            }
-            
-            if (inBlockquote) {
-                addBlockquoteToGroup();
-            }
-            
-            let leadingSpaces = listItemMatch[1].length; // Count leading spaces
-            let itemText = listItemMatch[3].trim(); // Keep original markdown formatting
-            let isChecklist = false;
-            let isChecked = false;
-
-            // Check if it's a checklist item
-            const checklistMatch = itemText.match(/^\[([ xX])\]\s+(.*)/);
-            if (checklistMatch) {
-                isChecklist = true;
-                isChecked = checklistMatch[1].toLowerCase() === 'x';
-                itemText = checklistMatch[2].trim();
-            }
-
-            if (!groups[currentGroup]) { // Ensure group exists if list appears before first H2
-               groups[currentGroup] = [];
-            }
-
-            if (itemText) { // Only add non-empty items
-                // Check for link format [Text](URL) within the raw item text
-                const linkMatch = itemText.match(/^\[(.+?)\]\((.+?)\)/);
-                
-                const item = {
-                    rawText: listItemMatch[0], // Original line with bullet point
-                    text: linkMatch ? linkMatch[1].trim() : itemText, // Text content
-                    url: linkMatch ? linkMatch[2].trim() : null, // URL if it's a link
-                    isChecklist: isChecklist,
-                    isChecked: isChecked,
-                    isUnorderedList: true,
-                    underHeader: currentHeader,
-                    headerLevel: currentHeaderLevel,
-                    nestingLevel: leadingSpaces / 2 // Assuming 2 spaces per level of indentation
-                };
-                
-                groups[currentGroup].push(item);
-            }
-            continue;
-        }
-        
-        // Match ordered list items (e.g., 1. Item, 2. Item)
-        const orderedListMatch = trimmedLine.match(/^(\s*)(\d+)\.\s+(.*)/);
-        if (orderedListMatch) {
-            if (inParagraph) {
-                addParagraphToGroup();
-            }
-            
-            if (inBlockquote) {
-                addBlockquoteToGroup();
-            }
-            
-            const leadingSpaces = orderedListMatch[1].length; // Count leading spaces
-            const number = parseInt(orderedListMatch[2]);
-            const itemText = orderedListMatch[3].trim();
-
-
-            if (itemText) { // Only add non-empty items
-                // Check for link format [Text](URL) within the raw item text
-                const linkMatch = itemText.match(/^\[(.+?)\]\((.+?)\)/);
-                
-                const item = {
-                    rawText: orderedListMatch[0], // Original line with number
-                    text: linkMatch ? linkMatch[1].trim() : itemText, // Text content
-                    url: linkMatch ? linkMatch[2].trim() : null, // URL if it's a link
-                    isOrderedList: true,
-                    number: number,
-                    underHeader: currentHeader,
-                    headerLevel: currentHeaderLevel
-                };
-                
-                groups[currentGroup].push(item);
-            }
-            continue;
-        }
-        
-        // If we get here, it's a paragraph text
-        if (inBlockquote) {
-            // If we're in a blockquote, continue collecting lines
-            currentBlockquote += '\n' + line;
+            // Start a new group
+            currentGroup = token.text;
+            currentGroupTokens = []; // Reset tokens for the new group
         } else {
-            // Otherwise, it's a regular paragraph
-            if (!inParagraph) {
-                inParagraph = true;
-                currentParagraph = line;
-            } else {
-                currentParagraph += '\n' + line;
-            }
+            // Add token to the current group
+            currentGroupTokens.push(token);
         }
-    }
-    
-    // Handle any remaining paragraph or blockquote
-    if (inParagraph) {
-        addParagraphToGroup();
-    }
-    
-    if (inBlockquote) {
-        addBlockquoteToGroup();
+    });
+
+    // Add the last group
+    if (currentGroup !== 'Uncategorized' || currentGroupTokens.length > 0) {
+         groups[currentGroup] = currentGroupTokens;
     }
 
-    // Return both the title and the groups
+    // If no H2s were found, but content exists, keep it in Uncategorized
+     if (Object.keys(groups).length === 0 && currentGroupTokens.length > 0) {
+          groups['Uncategorized'] = currentGroupTokens;
+     }
+
     return { title: parsedTitle, groups: groups };
 }
 
@@ -399,10 +136,10 @@ function parseMarkdown(markdown) {
 function renderSidebarTitle() {
     if (topLevelTitle) {
         sidebarTitleElement.textContent = topLevelTitle;
-        sidebarTitleElement.style.display = 'block'; // Show the title element
+        sidebarTitleElement.style.display = 'block';
     } else {
         sidebarTitleElement.textContent = '';
-        sidebarTitleElement.style.display = 'none'; // Hide if no title
+        sidebarTitleElement.style.display = 'none';
     }
 }
 
@@ -411,6 +148,7 @@ function renderSidebarTitle() {
  * Renders the group selector dropdown (using H2s).
  */
 function renderGroupSelector() {
+    const currentSelected = groupSelector.value; // Store current selection
     groupSelector.innerHTML = ''; // Clear existing options
     const groupNames = Object.keys(linkGroups);
 
@@ -431,187 +169,252 @@ function renderGroupSelector() {
         groupSelector.appendChild(option);
     });
 
-    const lastSelected = groupSelector.dataset.lastSelected;
-    if (lastSelected && groupNames.includes(lastSelected)) {
-        groupSelector.value = lastSelected;
+    // Try to restore previous selection, otherwise select the first
+    if (currentSelected && groupNames.includes(currentSelected)) {
+        groupSelector.value = currentSelected;
     } else if (groupNames.length > 0) {
-         // Select the first group if no previous selection or previous is gone
          groupSelector.value = groupNames[0];
     }
+     // Store the current value for persistence across renders
+     groupSelector.dataset.lastSelected = groupSelector.value;
 }
 
-
 /**
- * Renders the links/notes for the currently selected group, using Marked for formatting.
+ * Renders the links/notes for the currently selected group using marked.parser.
  */
 function renderLinks(groupName) {
     linksDisplay.innerHTML = ''; // Clear previous links
-    const items = linkGroups[groupName] || [];
-    
-    if (items.length === 0) {
+    const tokens = linkGroups[groupName] || [];
+
+    if (tokens.length === 0) {
         const emptyMessage = document.createElement('p');
         emptyMessage.innerHTML = '<em>No items in this group.</em>';
         linksDisplay.appendChild(emptyMessage);
         return;
     }
-    
-    // Collect all markdown content for this group
-    let groupContent = '';
-    
-    // Process all items in their original order
-    items.forEach(item => {
-        // Special handling for headers (H3-H6)
-        if (item.isHeader) {
-            const level = item.headerLevel || 3; // Default to H3 if not specified
-            groupContent += `${'#'.repeat(level)} ${item.text}\n\n`;
-            return;
-        }
-        
-        // Handle horizontal rules
-        if (item.isHorizontalRule) {
-            groupContent += '---\n\n';
-            return;
-        }
-        
-        // Handle blockquotes
-        if (item.isBlockquote) {
-            groupContent += `${item.rawText}\n\n`;
-            return;
-        }
-        
-        // Handle paragraphs
-        if (item.isParagraph) {
-            groupContent += `${item.text}\n\n`;
-            return;
-        }
-        
-        // Handle ordered lists
-        if (item.isOrderedList) {
-            // Check if this is a link
-            if (item.url) {
-                groupContent += `${item.number}. [${item.text}](${item.url})\n`;
-            } else {
-                groupContent += `${item.number}. ${item.text}\n`;
-            }
-            return;
-        }
-        
-        // Handle unordered lists
-        if (item.isChecklist) {
-            const checkMark = item.isChecked ? 'x' : ' ';
-            const indent = item.nestingLevel > 0 ? '  '.repeat(item.nestingLevel) : '';
-            
-            if (item.url) {
-                groupContent += `${indent}- [${checkMark}] [${item.text}](${item.url})\n`;
-            } else {
-                groupContent += `${indent}- [${checkMark}] ${item.text}\n`;
-            }
-        } else {
-            // Regular unordered list item
-            const indent = item.nestingLevel > 0 ? '  '.repeat(item.nestingLevel) : '';
-            
-            if (item.url) {
-                groupContent += `${indent}- [${item.text}](${item.url})\n`;
-            } else {
-                groupContent += `${indent}- ${item.text}\n`;
-            }
-        }
-    });
-    
-    // Use Marked to render the entire group content
+
+    // Use Marked to render the tokens for this group
     if (typeof marked !== 'undefined') {
         try {
-            // Render the markdown content
-            linksDisplay.innerHTML = marked.parse(groupContent);
-            
-            // Handle highlighted text (==text==)
-            const html = linksDisplay.innerHTML;
-            linksDisplay.innerHTML = html.replace(/==(.+?)==/g, '<mark>$1</mark>');
-            
-            // Make sure all links open in a new tab
+            // Prepare the tokens list for the parser
+            const parserTokens = [...tokens];
+            parserTokens.links = tokens.links || {}; // Required by marked.parser()
+
+            // Generate HTML from tokens
+            const rawHtml = marked.parser(parserTokens); // Get HTML string
+
+            // *** ADDED CONSOLE LOG HERE ***
+            console.log(`---- HTML for group: ${groupName} ----\n`, rawHtml, '\n--------------------------------');
+
+            // Set the innerHTML *after* logging
+            linksDisplay.innerHTML = rawHtml;
+
+
+            // --- Post-processing ---
+
+            // 1. Handle highlighted text (==text==)
+            const processedHtml = linksDisplay.innerHTML.replace(/==(.+?)==/g, '<mark>$1</mark>');
+            linksDisplay.innerHTML = processedHtml;
+
+            // 2. Make sure all links open in a new tab
             const links = linksDisplay.querySelectorAll('a');
             links.forEach(link => {
                 link.target = "_blank";
                 link.rel = "noopener noreferrer";
             });
-            
-            // Process checkbox items to remove bullets and add strikethrough for checked items
-            const checkboxItems = linksDisplay.querySelectorAll('input[type="checkbox"]');
-            checkboxItems.forEach((checkbox, index) => {
-                // Find the parent li element
+
+            // 3. Process checkboxes: add class, remove 'disabled', add listener
+            const checkboxInputs = linksDisplay.querySelectorAll('input[type="checkbox"]');
+            checkboxInputs.forEach(checkbox => {
                 const listItem = checkbox.closest('li');
                 if (listItem) {
-                    // Add task-list-item class to remove bullets
                     listItem.classList.add('task-list-item');
-                    
-                    // Apply strikethrough if checked
+                    checkbox.disabled = false;
                     if (checkbox.checked) {
                         listItem.classList.add('checked');
+                    } else {
+                         listItem.classList.remove('checked');
                     }
-                    
-                    // Add event listener for checkbox changes
-                    checkbox.addEventListener('change', () => {
-                        // Find the corresponding item in the items array
-                        const checklistItems = items.filter(item => item.isChecklist);
-                        const item = checklistItems[index];
-                        
-                        if (item) {
-                            // Update the item's isChecked state
-                            item.isChecked = checkbox.checked;
-                            
-                            // Update the raw text to reflect the new state
-                            const checkMark = checkbox.checked ? 'x' : ' ';
-                            item.rawText = item.rawText.replace(/\[([ xX])\]/, `[${checkMark}]`);
-                            
-                            // Apply or remove strikethrough based on checkbox state
-                            if (checkbox.checked) {
-                                listItem.classList.add('checked');
-                            } else {
-                                listItem.classList.remove('checked');
-                            }
-                            
-                            // Update the stored markdown content
-                            const lines = currentMarkdown.split('\n');
-                            for (let i = 0; i < lines.length; i++) {
-                                const line = lines[i].trim();
-                                if (line.includes(item.text) && line.includes('- [')) {
-                                    lines[i] = lines[i].replace(/\[([ xX])\]/, `[${checkMark}]`);
-                                    break;
-                                }
-                            }
-                            currentMarkdown = lines.join('\n');
-                            
-                            // Save the updated markdown to storage
-                            browser.storage.local.set({ markdownContent: currentMarkdown })
-                                .then(() => console.log('Checkbox state saved'))
-                                .catch(error => console.error('Error saving checkbox state:', error));
-                        }
-                    });
+                    // Ensure listener isn't duplicated on potential re-renders
+                    checkbox.removeEventListener('change', handleCheckboxChange);
+                    checkbox.addEventListener('change', (event) => handleCheckboxChange(event.target, listItem, groupName));
+                } else {
+                    console.warn("Found checkbox without parent <li>:", checkbox);
                 }
             });
+
         } catch (error) {
-            console.error('Error rendering markdown:', error);
+            console.error(`Error rendering markdown for group "${groupName}":`, error);
             linksDisplay.innerHTML = '<p>Error rendering content. See console for details.</p>';
         }
     } else {
-        // Fallback if marked is not available
         linksDisplay.innerHTML = '<p>Markdown rendering is not available.</p>';
     }
-    
+
     groupSelector.dataset.lastSelected = groupName;
 }
 
-// Helper to escape HTML for basic fallback
-function escapeHtml(unsafe) {
-    if (!unsafe) return '';
-    return unsafe
-         .replace(/&/g, "&amp;")
-         .replace(/</g, "&lt;")
-         .replace(/>/g, "&gt;")
-         .replace(/"/g, "&quot;")
-         .replace(/'/g, "&#39;");
- }
+// NOTE: Ensure the handleCheckboxChange and findMarkdownLineForCheckbox functions
+// (with their logging) from the previous steps are still present in your sidebar.js
 
+/**
+ * Finds the specific line index in the raw markdown for a given checkbox list item.
+ */
+function findMarkdownLineForCheckbox(listItemElement, groupName, currentMarkdown) {
+    // 1. Extract text from the list item
+    let searchtextContent = '';
+    const tempLi = listItemElement.cloneNode(true);
+    const checkboxInTemp = tempLi.querySelector('input[type="checkbox"]');
+    if (checkboxInTemp) {
+        checkboxInTemp.remove();
+    }
+    searchtextContent = tempLi.textContent.trim().replace(/\s+/g, ' ');
+    console.log(`[findMarkdownLine] Searching for group "${groupName}" with text: "${searchtextContent}"`); // Log search details
+
+    if (!searchtextContent) {
+        console.warn("[findMarkdownLine] Could not extract searchable text content for list item:", listItemElement);
+        return -1;
+    }
+
+    // 2. Search within the raw markdown lines
+    const lines = currentMarkdown.split('\n');
+    let inSelectedGroup = false;
+    let groupStartLine = -1;
+    let potentialMatchIndex = -1;
+    let isNested = (listItemElement.closest('ul ul, ol ol, ul ol, ol ul') !== null); // Check if the item is nested
+    console.log(`[findMarkdownLine] Is item nested? ${isNested}`);
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmedLine = line.trim();
+        const h2Match = trimmedLine.match(/^##\s+(.*)/);
+
+        // Find group boundaries
+        if (h2Match) {
+            if (inSelectedGroup) {
+                 console.log(`[findMarkdownLine] Reached next group header at line ${i}, stopping search in "${groupName}".`);
+                 break; // Found next group
+            }
+            if (h2Match[1].trim() === groupName) {
+                console.log(`[findMarkdownLine] Entered group "${groupName}" at line ${i}.`);
+                inSelectedGroup = true;
+                groupStartLine = i;
+            }
+        } else if (inSelectedGroup) {
+            // Inside the correct group
+            const checklistRegex = /^\s*([-*])\s+\[([ xX])\]\s+(.*)/;
+            const match = line.match(checklistRegex);
+
+            if (match) {
+                const rawTextPart = match[3].trim().replace(/\s+/g, ' ');
+                console.log(`[findMarkdownLine] Checking line ${i}: Raw text part: "${rawTextPart}"`); // Log comparison details
+                // Try a more flexible comparison
+                if (rawTextPart.includes(searchtextContent) || searchtextContent.includes(rawTextPart) || rawTextPart === searchtextContent) {
+                    potentialMatchIndex = i;
+                    console.log(`[findMarkdownLine] Found potential match at line ${i}.`);
+                    break; // Assume first match is correct
+                }
+            }
+        }
+    }
+
+    // Handle 'Uncategorized' group
+     if (!inSelectedGroup && groupName === 'Uncategorized') {
+          console.log(`[findMarkdownLine] Searching in "Uncategorized" group.`);
+          let firstH2Index = lines.findIndex(l => l.trim().startsWith('## '));
+          if (firstH2Index === -1) firstH2Index = lines.length;
+
+          for (let i = 0; i < firstH2Index; i++) {
+             const line = lines[i];
+             const checklistRegex = /^\s*([-*])\s+\[([ xX])\]\s+(.*)/;
+             const match = line.match(checklistRegex);
+             if (match) {
+                  const rawTextPart = match[3].trim().replace(/\s+/g, ' ');
+                   console.log(`[findMarkdownLine] Checking line ${i} (Uncategorized): Raw text part: "${rawTextPart}"`);
+                  if (rawTextPart.includes(searchtextContent) || searchtextContent.includes(rawTextPart) || rawTextPart === searchtextContent) {
+                      potentialMatchIndex = i;
+                       console.log(`[findMarkdownLine] Found potential match at line ${i} (Uncategorized).`);
+                      break;
+                  }
+             }
+          }
+     }
+
+    if (potentialMatchIndex === -1) {
+         console.log(`[findMarkdownLine] No matching line found for "${searchtextContent}" in group "${groupName}".`);
+    }
+    return potentialMatchIndex;
+}
+
+/**
+ * Handles checkbox state changes: updates the raw markdown and saves.
+ */
+async function handleCheckboxChange(checkbox, listItem, groupName) {
+    const isChecked = checkbox.checked;
+    console.log(`Checkbox change detected. Checked: ${isChecked}. Item:`, listItem.textContent.trim()); // Log initial state
+
+    // Apply/remove visual strikethrough immediately
+    if (isChecked) {
+        listItem.classList.add('checked');
+        console.log('Added .checked class');
+    } else {
+        // *** Explicitly remove the class ***
+        listItem.classList.remove('checked');
+        console.log('Removed .checked class'); // Log removal
+    }
+
+     // Verify class removal immediately after
+     console.log('Class list after update:', listItem.classList.toString());
+
+
+    // Find the corresponding markdown line index
+    const lineIndex = findMarkdownLineForCheckbox(listItem, groupName, currentMarkdown);
+
+    if (lineIndex !== -1) {
+        try {
+            const lines = currentMarkdown.split('\n');
+            const checkMark = isChecked ? 'x' : ' ';
+            // Replace the checkbox marker in the found line
+            const oldLine = lines[lineIndex];
+            lines[lineIndex] = oldLine.replace(/\[([ xX])\]/, `[${checkMark}]`);
+            currentMarkdown = lines.join('\n');
+            console.log(`Updated markdown line ${lineIndex}: "${oldLine}" -> "${lines[lineIndex]}"`);
+
+            // Save the updated markdown to storage
+            await browser.storage.local.set({ markdownContent: currentMarkdown });
+            console.log('Checkbox state saved successfully.');
+
+        } catch (error) {
+             console.error('Error updating/saving checkbox state in markdown:', error);
+             alert("Error saving checkbox state. See console.");
+             // Revert visual change on error
+             checkbox.checked = !isChecked; // Toggle back
+             console.log(`Save error, reverting visual state. Checked: ${checkbox.checked}`);
+             if(isChecked) {
+                 listItem.classList.remove('checked'); // Ensure removed on error during check
+                 console.log('Save error, ensured .checked class removed');
+             } else {
+                 listItem.classList.add('checked'); // Ensure added on error during uncheck
+                  console.log('Save error, ensured .checked class added back');
+             }
+             console.log('Class list after save error:', listItem.classList.toString());
+        }
+    } else {
+        console.error('Could not find corresponding markdown line for checkbox:', listItem.textContent.trim());
+        alert("Error saving checkbox state. Could not find the item in the source Markdown.");
+        // Revert visual change if line not found
+         checkbox.checked = !isChecked; // Toggle back
+         console.log(`Line not found, reverting visual state. Checked: ${checkbox.checked}`);
+         if(isChecked) {
+             listItem.classList.remove('checked');
+              console.log('Line not found, ensured .checked class removed');
+         } else {
+             listItem.classList.add('checked');
+             console.log('Line not found, ensured .checked class added back');
+         }
+         console.log('Class list after line not found error:', listItem.classList.toString());
+    }
+}
 
 /**
  * Switches between View Mode and Edit Mode.
@@ -635,26 +438,21 @@ function toggleEditMode(edit) {
         editButton.style.display = 'inline-block';
         groupSelector.disabled = false;
 
-        // Re-parse and re-render the view
-        const parsedData = parseMarkdown(currentMarkdown);
+        // Re-lex/group and re-render the view
+        const parsedData = lexAndGroupMarkdown(currentMarkdown);
         topLevelTitle = parsedData.title;
         linkGroups = parsedData.groups;
 
-        renderSidebarTitle(); // Render title first
-        renderGroupSelector(); // Then groups
+        renderSidebarTitle();
+        renderGroupSelector(); // Renders dropdown and sets initial selection
 
-        // Render links for the selected (or first) group
         const selectedGroup = groupSelector.value;
-         if (selectedGroup) {
+        if (selectedGroup) {
             renderLinks(selectedGroup);
-         } else if (Object.keys(linkGroups).length > 0) {
-            // If no specific selection but groups exist, render the first one
-             renderLinks(Object.keys(linkGroups)[0]);
-         }
-         else {
-             // No groups found at all
+        } else {
+            // Handle case where there might be no groups after edit
              linksDisplay.innerHTML = '<ul><li><em>No content found. Try editing!</em></li></ul>';
-         }
+        }
     }
 }
 
@@ -679,117 +477,111 @@ async function saveMarkdown() {
  */
 async function addCurrentTab() {
     try {
-        // Get the active tab in the current window
         const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-        
         if (tabs.length === 0) {
             console.error('No active tab found');
             alert('Could not find an active tab.');
             return;
         }
-        
         const activeTab = tabs[0];
-        const title = activeTab.title || 'Untitled Page';
+        // Sanitize title slightly: remove potential square brackets to avoid breaking markdown link syntax
+        const title = (activeTab.title || 'Untitled Page').replace(/[[\]]/g, '');
         const url = activeTab.url;
-        
-        console.log('Active tab:', { title, url });
-        
-        // Get the currently selected group
+
+        if (!url || url.startsWith('about:')) {
+             alert('Cannot add special browser pages (like about:debugging).');
+             return;
+        }
+
         const selectedGroup = groupSelector.value;
         if (!selectedGroup) {
-            console.error('No group selected');
             alert('Please select a group first.');
             return;
         }
-        
-        // Create a new markdown link entry
+
         const newLink = `- [${title}](${url})`;
-        
-        // Add the new link to the markdown content
         const lines = currentMarkdown.split('\n');
         let groupFound = false;
-        let lastGroupLineIndex = -1;
-        
-        // Find the selected group and the last line of its content
+        let insertIndex = -1;
+
+        // Find the line *after* the selected group header or the end of the file
+        let inSelectedGroup = false;
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
-            
-            // Check if this line is the selected group header
-            if (line.match(new RegExp(`^##\\s+${selectedGroup}\\s*$`))) {
+            const h2Match = line.match(/^##\s+(.*)/);
+
+            if (h2Match && h2Match[1].trim() === selectedGroup) {
                 groupFound = true;
-                lastGroupLineIndex = i;
-                
-                // Find the last line of this group's content
-                for (let j = i + 1; j < lines.length; j++) {
-                    const nextLine = lines[j].trim();
-                    
-                    // If we find another group header, stop
-                    if (nextLine.match(/^##\s+/)) {
-                        break;
-                    }
-                    
-                    lastGroupLineIndex = j;
+                inSelectedGroup = true;
+                insertIndex = i + 1; // Default: insert right after header
+            } else if (inSelectedGroup) {
+                if (line.match(/^##\s+/)) {
+                    // Found the next group header, insert before it
+                    insertIndex = i;
+                    break;
+                } else {
+                    // Keep track of the last line within the current group
+                    insertIndex = i + 1;
                 }
-                
-                break;
             }
         }
-        
-        if (!groupFound) {
-            console.error('Selected group not found in markdown');
-            alert(`Could not find the selected group "${selectedGroup}" in the markdown content.`);
+
+        // Handle 'Uncategorized' - insert after H1 if exists, else at start, before first H2
+        if (!groupFound && selectedGroup === 'Uncategorized') {
+             groupFound = true; // Assume it exists implicitly
+             let firstH2Index = lines.findIndex(line => line.trim().startsWith('## '));
+             if (firstH2Index === -1) firstH2Index = lines.length; // No H2s, append to end
+
+             let firstH1Index = lines.findIndex(line => line.trim().startsWith('# '));
+             insertIndex = (firstH1Index !== -1) ? firstH1Index + 1 : 0; // After H1 or at start
+             // Ensure we insert before the first H2 if H1 isn't present or is after H2 (unlikely)
+             if(insertIndex >= firstH2Index) {
+                 insertIndex = firstH2Index;
+             }
+
+        } else if (!groupFound) {
+            console.error('Selected group not found in markdown for adding tab');
+            alert(`Could not find the selected group "${selectedGroup}" to add the tab.`);
             return;
         }
-        
-        // Insert the new link after the last line of the group
-        lines.splice(lastGroupLineIndex + 1, 0, newLink);
-        
-        // Update the markdown content
+
+        // Ensure insertion index is valid
+        if (insertIndex < 0) insertIndex = lines.length; // Append if something went wrong
+
+        // Add an empty line before the new link if the preceding line isn't empty
+        if (insertIndex > 0 && lines[insertIndex - 1] && lines[insertIndex - 1].trim() !== '') {
+             lines.splice(insertIndex, 0, ''); // Insert blank line
+             insertIndex++;
+        }
+
+
+        lines.splice(insertIndex, 0, newLink);
         currentMarkdown = lines.join('\n');
-        
-        // Save the updated markdown
+
+        // Save, re-lex, re-render
         await browser.storage.local.set({ markdownContent: currentMarkdown });
         console.log('Tab added successfully');
-        
-        // Re-parse and re-render the view
-        const parsedData = parseMarkdown(currentMarkdown);
+
+        const parsedData = lexAndGroupMarkdown(currentMarkdown);
         topLevelTitle = parsedData.title;
         linkGroups = parsedData.groups;
-        
+
         renderSidebarTitle();
-        renderGroupSelector();
-        
-        // Make sure the same group is still selected
-        groupSelector.value = selectedGroup;
-        renderLinks(selectedGroup);
-        
-        // Show a brief success message
-        const successMessage = document.createElement('div');
-        successMessage.textContent = 'Tab added!';
-        successMessage.style.position = 'absolute';
-        successMessage.style.bottom = '10px';
-        successMessage.style.right = '10px';
-        successMessage.style.backgroundColor = 'var(--firefox-blue)';
-        successMessage.style.color = 'white';
-        successMessage.style.padding = '5px 10px';
-        successMessage.style.borderRadius = '3px';
-        successMessage.style.opacity = '0.9';
-        document.body.appendChild(successMessage);
-        
-        // Remove the message after 2 seconds
-        setTimeout(() => {
-            successMessage.style.opacity = '0';
-            successMessage.style.transition = 'opacity 0.5s';
-            setTimeout(() => {
-                document.body.removeChild(successMessage);
-            }, 500);
-        }, 2000);
-        
+        renderGroupSelector(); // Re-render dropdown
+
+        // Restore selection and render links
+        groupSelector.value = selectedGroup; // Ensure correct group is selected
+        renderLinks(selectedGroup); // Render the updated group
+
+        // Optional: Show brief success message (implement as needed)
+
+
     } catch (error) {
         console.error('Error adding current tab:', error);
         alert('Error adding current tab. See browser console for details.');
     }
 }
+
 
 /**
  * Loads Markdown content from browser storage or uses default.
@@ -797,48 +589,39 @@ async function addCurrentTab() {
 async function loadMarkdown() {
     try {
         const result = await browser.storage.local.get('markdownContent');
-        if (result && typeof result.markdownContent === 'string') { // Check if key exists and is string
+        if (result && typeof result.markdownContent === 'string') {
             currentMarkdown = result.markdownContent;
-            console.log('Markdown loaded from storage.');
         } else {
             currentMarkdown = defaultMarkdown;
-            console.log('No markdown found in storage or invalid format, using default.');
-            // Save the default content back to storage
             await browser.storage.local.set({ markdownContent: currentMarkdown });
         }
     } catch (error) {
         console.error('Error loading markdown:', error);
-        currentMarkdown = defaultMarkdown; // Fallback to default on error
+        currentMarkdown = defaultMarkdown;
          alert('Error loading saved links. Using default content. See browser console for details.');
     } finally {
-        // Parse the loaded/default markdown
-        const parsedData = parseMarkdown(currentMarkdown);
+        // Lex/group the loaded/default markdown
+        const parsedData = lexAndGroupMarkdown(currentMarkdown);
         topLevelTitle = parsedData.title;
         linkGroups = parsedData.groups;
 
         // Initial render
         renderSidebarTitle();
         renderGroupSelector();
-        const initialGroup = groupSelector.value; // Get the selected value after renderGroupSelector
+        const initialGroup = groupSelector.value;
          if (initialGroup) {
             renderLinks(initialGroup);
-         } else if (Object.keys(linkGroups).length > 0) {
-             // If no selection but groups exist (e.g. "Uncategorized"), render first
-             renderLinks(Object.keys(linkGroups)[0]);
-         }
-         else {
+         } else {
              linksDisplay.innerHTML = '<ul><li><em>No content found. Try editing!</em></li></ul>';
          }
     }
 }
 
 
-// --- Event Listeners are now added in the DOMContentLoaded handler ---
-
-// --- Initialization ---
+// --- Event Listeners & Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOMContentLoaded event fired');
-    
+
     // Initialize DOM references
     sidebarTitleElement = document.getElementById('sidebar-title');
     groupSelector = document.getElementById('group-selector');
@@ -848,61 +631,30 @@ document.addEventListener('DOMContentLoaded', () => {
     editModeDiv = document.getElementById('edit-mode');
     markdownInput = document.getElementById('markdown-input');
     addTabButton = document.getElementById('add-tab-button');
-    
-    // Log DOM elements to verify they're found
-    console.log('DOM Elements:', {
-        sidebarTitleElement,
-        groupSelector,
-        linksDisplay,
-        editButton,
-        saveButton,
-        editModeDiv,
-        markdownInput,
-        addTabButton
-    });
-    
-    // Check if browser API is available
-    if (typeof browser === 'undefined') {
-        console.error('browser API is not available. This extension requires Firefox.');
-        // Fallback to chrome API if available (for Chrome compatibility)
-        if (typeof chrome !== 'undefined' && chrome.storage) {
-            console.log('Using chrome API as fallback');
-            window.browser = chrome;
-        } else {
-            console.error('No compatible browser API found');
-            alert('This extension requires Firefox or a compatible browser with the WebExtensions API.');
-            return;
-        }
-    }
-    
-    // Check if storage API is available
-    if (!browser.storage || !browser.storage.local) {
-        console.error('browser.storage.local API is not available');
-        alert('This extension requires the storage permission to function properly.');
+
+    // Basic check if elements exist
+    if (!sidebarTitleElement || !groupSelector || !linksDisplay || !editButton || !saveButton || !editModeDiv || !markdownInput || !addTabButton) {
+        console.error("One or more essential DOM elements not found!");
+        alert("Error initializing sidebar: UI elements missing.");
         return;
     }
-    
+     // Check if browser API is available
+     if (typeof browser === 'undefined' || !browser.storage || !browser.storage.local || !browser.tabs) {
+        console.error('Required browser APIs (storage, tabs) not available. This extension requires Firefox.');
+         alert('This extension requires Firefox and necessary permissions (storage, tabs) to function.');
+        // Disable controls maybe?
+        editButton.disabled = true;
+        addTabButton.disabled = true;
+        return;
+     }
+
+
     // Add event listeners
-    groupSelector.addEventListener('change', (event) => {
-        console.log('Group selector changed:', event.target.value);
-        renderLinks(event.target.value);
-    });
-    
-    editButton.addEventListener('click', () => {
-        console.log('Edit button clicked');
-        toggleEditMode(true);
-    });
-    
-    saveButton.addEventListener('click', () => {
-        console.log('Save button clicked');
-        saveMarkdown();
-    });
-    
-    addTabButton.addEventListener('click', () => {
-        console.log('Add Tab button clicked');
-        addCurrentTab();
-    });
-    
+    groupSelector.addEventListener('change', (event) => renderLinks(event.target.value));
+    editButton.addEventListener('click', () => toggleEditMode(true));
+    saveButton.addEventListener('click', saveMarkdown);
+    addTabButton.addEventListener('click', addCurrentTab);
+
     // Initialize the extension
     loadMarkdown().catch(error => {
         console.error('Error during initialization:', error);
@@ -910,7 +662,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-// Add a global error handler
+// Add a global error handler for easier debugging
 window.addEventListener('error', (event) => {
     console.error('Uncaught error:', event.error);
 });
