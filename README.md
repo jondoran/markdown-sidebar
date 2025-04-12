@@ -2,6 +2,8 @@
 
 A Firefox sidebar extension to keep useful links, notes, and task lists handy, organized using simple Markdown syntax.
 
+![Screenshot of sidebar](/icons/icon128.png)
+
 ## Features
 
 * View notes and links directly in the Firefox sidebar.
@@ -12,9 +14,19 @@ A Firefox sidebar extension to keep useful links, notes, and task lists handy, o
 * Checkbox state (`[ ]`/`[x]`) in task lists is saved when toggled
 * All your Markdown data is stored locally on your device using browser storage
 
+## Screenshots
+
+### Sidebar
+
+![Screenshot of sidebar](hero.png)
+
+### Editor
+
+![Screenshot of editor](edit.png)
+
 ## Installation
 
-**From Mozilla Add-ons (AMO):** [Link coming soon - awaiting approval]()
+**From Mozilla Add-ons:** [Markdown](https://addons.mozilla.org/en-GB/firefox/addon/markdown-sidebar/) (NOTE: Awaiting approval as at 2025-04-12)
 
 ## Usage
 
