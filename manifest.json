@@ -1,11 +1,15 @@
 {
     "manifest_version": 3,
-    "name": "Markdown Links Sidebar",
+    "name": "Markdown Sidebar",
     "version": "0.1.0",
     "description": "Displays organized links and notes from Markdown text in a sidebar.",
   
     "icons": {
-      "48": "icons/icon48.png"
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "96": "icons/icon96.png",
+      "128": "icons/icon128.png"
     },
   
     "permissions": [
@@ -21,7 +25,11 @@
   
     "browser_specific_settings": {
       "gecko": {
-        "id": "mls@doran.au"
+        "id": "markdown-sidebar@doran.au"
       }
+    },
+
+    "content_security_policy": {
+      "extension_pages": "script-src 'self'; object-src 'self';"
     }
 }
