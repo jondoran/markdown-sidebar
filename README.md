@@ -1,4 +1,4 @@
-# Markdown Links Sidebar (Firefox Extension)
+# Markdown Sidebar (Firefox Extension)
 
 A Firefox sidebar extension to keep useful links, notes, and task lists handy, organized using simple Markdown syntax.
 
